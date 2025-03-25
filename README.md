@@ -1,0 +1,171 @@
+# 用户中心SDK
+
+这是一个用于与用户中心API进行交互的官方SDK，提供了简单、统一的接口，使其他Django应用能够轻松集成用户中心的所有功能。
+
+## 版本信息
+
+**当前版本:** 1.1.0 (2025-03-26)
+
+## 特性
+
+- 完整支持用户中心的所有API功能
+- 跨应用登录与单点登录(SSO) - 实现应用间的无缝登录体验
+- API监控 - 追踪和分析API使用情况
+- 安全的令牌共享 - 在不同应用间安全地共享访问令牌
+- 简单易用的接口设计
+- 自动处理认证和令牌刷新
+- 内置错误处理和重试机制
+- 支持异步操作
+- 完整的类型提示
+- 详细的文档和示例
+
+## 安装
+
+```bash
+pip install user-center-sdk==1.1.0
+```
+
+或者将其添加到您的`requirements.txt`文件中：
+
+```
+user-center-sdk==1.1.0
+```
+
+## 快速开始
+
+### 配置
+
+在Django项目的`settings.py`中添加以下配置：
+
+```python
+# 用户中心SDK配置
+USER_CENTER_SDK = {
+    'API_BASE_URL': 'http://user-center-api.example.com/api/v1/',  # 用户中心API基础URL
+    'API_KEY': 'your-api-key',  # 可选，用于API文档访问
+    'DEFAULT_TIMEOUT': 10,  # 请求超时时间（秒）
+    'MAX_RETRIES': 3,  # 最大重试次数
+    'CACHE_ENABLED': True,  # 是否启用缓存
+    'CACHE_TIMEOUT': 300,  # 缓存超时时间（秒）
+    'AUTO_REFRESH_TOKEN': True,  # 是否自动刷新令牌
+}
+```
+
+### 基本用法
+
+```python
+from user_center_sdk import UserCenterClient
+
+# 创建客户端实例
+client = UserCenterClient()
+
+# 用户登录
+response = client.auth.login(username="example_user", password="secure_password")
+if response.success:
+    print(f"登录成功! 用户ID: {response.data['user']['id']}")
+    print(f"访问令牌: {response.data['access']}")
+    print(f"刷新令牌: {response.data['refresh']}")
+else:
+    print(f"登录失败: {response.message}")
+
+# 获取用户资料
+user_profile = client.users.get_profile()
+if user_profile.success:
+    print(f"用户资料: {user_profile.data}")
+else:
+    print(f"获取用户资料失败: {user_profile.message}")
+
+# 修改密码
+change_password = client.users.change_password(
+    old_password="old_password", 
+    new_password="new_password", 
+    confirm_password="new_password"
+)
+if change_password.success:
+    print("密码修改成功!")
+else:
+    print(f"密码修改失败: {change_password.message}")
+
+# 登出
+logout = client.auth.logout()
+if logout.success:
+    print("登出成功!")
+else:
+    print(f"登出失败: {logout.message}")
+```
+
+## 详细文档
+
+请查看[完整文档](https://user-center-sdk.readthedocs.io/)获取更多信息和高级用法。
+
+## 集成示例
+
+### 在Django视图中使用
+
+```python
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from user_center_sdk import UserCenterClient
+
+def login_view(request):
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        
+        client = UserCenterClient()
+        response = client.auth.login(username=username, password=password)
+        
+        if response.success:
+            # 将令牌存储在会话中
+            request.session['access_token'] = response.data['access']
+            request.session['refresh_token'] = response.data['refresh']
+            request.session['user_id'] = response.data['user']['id']
+            request.session['username'] = response.data['user']['username']
+            
+            messages.success(request, '登录成功!')
+            return redirect('dashboard')
+        else:
+            messages.error(request, f'登录失败: {response.message}')
+    
+    return render(request, 'login.html')
+```
+
+### 在中间件中自动刷新令牌
+
+```python
+from django.utils.deprecation import MiddlewareMixin
+from user_center_sdk import UserCenterClient
+
+class UserCenterAuthMiddleware(MiddlewareMixin):
+    def process_request(self, request):
+        # 检查会话中是否有访问令牌
+        access_token = request.session.get('access_token')
+        refresh_token = request.session.get('refresh_token')
+        
+        if access_token and refresh_token:
+            client = UserCenterClient()
+            
+            # 验证访问令牌
+            token_check = client.auth.check_token(access_token)
+            
+            # 如果令牌无效，尝试刷新
+            if not token_check.success:
+                refresh_response = client.auth.refresh_token(refresh_token)
+                if refresh_response.success:
+                    # 更新会话中的令牌
+                    request.session['access_token'] = refresh_response.data['access']
+                    request.session['refresh_token'] = refresh_response.data['refresh']
+                else:
+                    # 刷新失败，清除会话
+                    request.session.pop('access_token', None)
+                    request.session.pop('refresh_token', None)
+                    request.session.pop('user_id', None)
+                    request.session.pop('username', None)
+```
+
+## 贡献
+
+欢迎贡献代码、报告问题或提出改进建议。请查看[贡献指南](CONTRIBUTING.md)了解更多信息。
+
+## 许可证
+
+本项目采用MIT许可证。详见[LICENSE](LICENSE)文件。
